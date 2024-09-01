@@ -2,6 +2,7 @@
 #include <helib/helib.h>
 #include <random>
 #include "Verifieur.h"
+#include "Structure.h"
 
 
 //On veut employer les méthodes de la bibliothèque helib 
@@ -10,11 +11,21 @@ using namespace std;
 using namespace NTL;
 
 //Constructor
-Verifieur::Verifieur(const PubKey& publickey, const Ctxt& cypher) :
+Verifieur::Verifieur(const PubKey& publickey) :
     context(publickey.getContext()),
     pubKey(publickey),
-    ctxt(cypher)
-    
+    chiffre(*(new Ctxt(pubKey)))
+{}
+
+// Setters getters 
+void Verifieur::set_ctxt(const Ctxt& c){
+    this->chiffre = c;
+}
+
+Ctxt Verifieur::get_ctxt(){
+    return this->chiffre;
+}
+
 
 void Verifieur::genere_monomes(vector<NTL::ZZX> gamma, int exposant_max){
     int k;
@@ -28,20 +39,80 @@ void Verifieur::genere_monomes(vector<NTL::ZZX> gamma, int exposant_max){
     };
 }
 
-bool Verifieur::verification(vector<Ptxt<BGV>> v, vector<vector<DoubleCRT>> e_z, vector<DoubleCRT> r_z, vector<double> r_bound_z, vector<vector<NTL::xdouble>> e_bound_z, vector<Ctxt> w){
+
+
+bool Verifieur::verification(double l, vector<NTL::ZZX> gamma,vector<Ptxt<BGV>> messages_preuves, vector<random_chiffrement> randoms_preuves, vector<Ctxt> chiffres_tests){
     helib::Ctxt result(pubKey);
-    Ctxt somme(pubKey);
-    for (long i = 0; i < v.size(); ++i){
-        helib::DoubleCRT dcrt(gamma[i], context, context.getCtxtPrimes()); //On convertit gamma_i en DoubleCRT
-        publicKey.Encrypt(result, v[i], r_z[i], e_z[i], e_bound_z[i], r_bound_z[i]);
-        somme = ctxt;
-        somme.parts[1] *= dcrt;
-        somme += w[i];
-        cout << "Vérification de l'égalité " << i << "..." << endl; 
-        if (result.parts[1] != somme.parts[1]){
+    for (long j = 0; j < l; ++j){
+        pubKey.Encrypt(result, messages_preuves[j], randoms_preuves[j].r, randoms_preuves[j].e, randoms_preuves[j].e_bound, randoms_preuves[j].r_bound);
+        Ctxt somme(pubKey);
+        somme = chiffre;
+        cout << "gamma :" << gamma[j] << endl; 
+        somme.parts[0] *= gamma[j];
+        somme.parts[1] *= gamma[j];
+        somme += chiffres_tests[j];
+
+        DoubleCRT poly1 = result.parts[0];
+        DoubleCRT poly2 = somme.parts[0];
+        ZZX poly_test1;
+        ZZX poly_test2;
+        poly1.toPoly(poly_test1);
+        poly2.toPoly(poly_test2);
+
+        for (auto i = 0; i < deg(poly_test1)+1; ++i) {
+            if (poly_test1[i] + context.getP() == poly_test2[i])
+            {
+                poly_test1[i] += context.getP();
+            }
+            else if (poly_test1[i] == poly_test2[i] + context.getP())
+            {
+                poly_test1[i] -= context.getP();
+            }
+            else if (poly_test1[i] == poly_test2[i] + 2*context.getP())
+            {
+                poly_test1[i] -= 2*context.getP();
+            }
+            else if (poly_test1[i] + 2*context.getP()  == poly_test2[i])
+            {
+                poly_test1[i] += 2*context.getP();
+            }
+            else if (poly_test1[i] == poly_test2[i] + 3*context.getP())
+            {
+                poly_test1[i] -= 3*context.getP();
+            }
+            else if (poly_test1[i] + 3*context.getP()  == poly_test2[i])
+            {
+                poly_test1[i] += 3*context.getP();
+            }
+            else if (poly_test1[i] == poly_test2[i] + 4*context.getP())
+            {
+                poly_test1[i] -= 4*context.getP();
+            }
+            else if (poly_test1[i] + 4*context.getP()  == poly_test2[i])
+            {
+                poly_test1[i] += 4*context.getP();
+            }
+            else if (poly_test1[i] != poly_test2[i] ){
+                cout << "Erreur, la différence est : " << poly_test1[i] - poly_test2[i] << endl;
+            }
+        };
+        DoubleCRT result_CRT = DoubleCRT(poly_test1, context, context.getCtxtPrimes());
+        CtxtPart result_ctxt = CtxtPart(result_CRT);
+        result.parts[0] = (result_ctxt);
+
+        cout << "Vérification de l'égalité " << j << "..." << endl; 
+        
+
+        if (result != somme){
             cout << "La vérification n'a pas fonctionné" << endl;
             return false;
         }
+
+        cout << "Le resulat est bon" << endl;
     }
-    return true
+    cout << "La vérification a fonctionné\n" << endl;
+    return true;
 }
+
+
+        
